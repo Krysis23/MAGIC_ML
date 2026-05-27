@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}AutoML Studio{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0f;
+  --surface: #111118;
+  --surface2: #1a1a24;
+  --border: #2a2a38;
+  --border2: #3a3a50;
+  --accent: #6c63ff;
+  --accent2: #a78bfa;
+  --green: #22c55e;
+  --red: #ef4444;
+  --amber: #f59e0b;
+  --text: #e8e8f0;
+  --muted: #6b6b82;
+  --mono: 'IBM Plex Mono', monospace;
+  --display: 'Syne', sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--display);
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+a { color: var(--accent2); text-decoration: none; }
+a:hover { color: var(--text); }
+
+/* Layout */
+.nav {
+  border-bottom: 1px solid var(--border);
+  padding: 0 2rem;
+  display: flex;
+  align-items: center;
+  height: 56px;
+  position: sticky;
+  top: 0;
+  background: rgba(10,10,15,0.95);
+  backdrop-filter: blur(8px);
+  z-index: 100;
+}
+.nav-logo {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.nav-logo span {
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.nav-links { margin-left: auto; display: flex; gap: 1.5rem; font-size: 13px; color: var(--muted); }
+.nav-links a:hover { color: var(--text); }
+
+.container { max-width: 1100px; margin: 0 auto; padding: 0 2rem; }
+.page { padding: 3rem 0 5rem; }
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.card-header {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.card-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.card-body { padding: 1.5rem; }
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all .15s;
+}
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.btn-primary:hover { background: #5a52e0; border-color: #5a52e0; }
+.btn-outline {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border2);
+}
+.btn-outline:hover { border-color: var(--accent2); color: var(--accent2); }
+.btn-sm { padding: 6px 14px; font-size: 12px; }
+
+/* Forms */
+.form-group { margin-bottom: 1.25rem; }
+.form-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.form-control {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 13px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  transition: border-color .15s;
+  outline: none;
+}
+.form-control:focus { border-color: var(--accent); }
+.form-control option { background: var(--surface2); }
+
+/* Tags / badges */
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-family: var(--mono);
+}
+.badge-purple { background: rgba(108,99,255,0.15); color: var(--accent2); border: 1px solid rgba(108,99,255,0.3); }
+.badge-green  { background: rgba(34,197,94,0.12);  color: var(--green);   border: 1px solid rgba(34,197,94,0.25); }
+.badge-amber  { background: rgba(245,158,11,0.12); color: var(--amber);   border: 1px solid rgba(245,158,11,0.25); }
+.badge-red    { background: rgba(239,68,68,0.12);  color: var(--red);     border: 1px solid rgba(239,68,68,0.25); }
+
+/* Metric grid */
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.metric-cell { background: var(--surface); padding: 1rem 1.25rem; }
+.metric-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.metric-value { font-size: 22px; font-weight: 800; color: var(--text); font-family: var(--mono); }
+
+/* Alerts */
+.alert { padding: 12px 16px; border-radius: 6px; font-size: 13px; margin-bottom: 1rem; border: 1px solid; }
+.alert-error { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); color: #fca5a5; }
+.alert-success { background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.3); color: #86efac; }
+
+/* Table */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; font-family: var(--mono); }
+.data-table th { padding: 8px 12px; text-align: left; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600; }
+.data-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: var(--surface2); }
+
+/* Upload zone */
+.upload-zone {
+  border: 2px dashed var(--border2);
+  border-radius: 8px;
+  padding: 3rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all .2s;
+  position: relative;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(108,99,255,0.05);
+}
+.upload-zone input[type=file] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+}
+.upload-icon { font-size: 2.5rem; margin-bottom: 0.75rem; opacity: 0.5; }
+.upload-label { font-size: 15px; font-weight: 600; margin-bottom: 0.25rem; }
+.upload-hint { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+
+/* Code block */
+.code-block {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent2);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Spinner */
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Page fade in */
+.page { animation: fadeUp .4s ease both; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+
+/* Dot indicator */
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+</style>
+{% block extra_head %}{% endblock %}
+</head>
+<body>
+<nav class="nav">
+  <a href="/" class="nav-logo">⬡ AutoML <span>STUDIO</span></a>
+  <div class="nav-links">
+    <a href="/">Train</a>
+    <a href="/health">API</a>
+    <a href="https://github.com" target="_blank">GitHub ↗</a>
+  </div>
+</nav>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="container" style="padding-top:1rem">
+      {% for category, message in messages %}
+        <div class="alert alert-{{ 'error' if category == 'error' else 'success' }}">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+{% block content %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+{% block title %}AutoML Studio — Train on Any Dataset{% endblock %}
+
+{% block extra_head %}
+<style>
+.hero { padding: 4rem 0 3rem; text-align: center; }
+.hero-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: var(--accent2); margin-bottom: 1rem; }
+.hero-title { font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 800; line-height: 1.1; margin-bottom: 1.5rem; }
+.hero-title em { font-style: normal; color: var(--accent2); }
+.hero-sub { font-size: 16px; color: var(--muted); max-width: 620px; margin: 0 auto 2.5rem; line-height: 1.7; }
+.steps { display: flex; gap: 2rem; margin-bottom: 3rem; flex-wrap: wrap; justify-content: center; }
+.step { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.step-num { width: 24px; height: 24px; border-radius: 50%; background: var(--accent2); color: white; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+
+.form-container { max-width: 700px; margin: 0 auto; }
+.col-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.col-chip { padding: 6px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: var(--mono); color: var(--text); cursor: pointer; transition: all .2s; }
+.col-chip:hover { background: var(--surface); border-color: var(--border2); }
+.col-chip.selected { background: rgba(108,99,255,0.15); border-color: var(--accent2); color: var(--accent2); font-weight: 600; }
+#col-select-hint { font-size: 12px; color: var(--accent2); margin-top: 8px; font-weight: 500; }
+.preview-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--mono); }
+.preview-table th { padding: 10px; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); font-weight: 600; text-align: left; }
+.preview-table td { padding: 8px 10px; border: 1px solid var(--border); max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.info-row { display: flex; gap: 1.5rem; font-size: 12px; color: var(--muted); font-family: var(--mono); margin-top: 12px; flex-wrap: wrap; }
+.info-row span b { color: var(--text); font-weight: 600; }
+.model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+#model-warning { font-size: 12px; color: #f59e0b; display: none; margin-top: 12px; padding: 8px 12px; background: rgba(245, 158, 11, 0.1); border-left: 3px solid #f59e0b; border-radius: 3px; }
+.btn-group { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.btn-group > div { font-size: 13px; color: var(--muted); font-weight: 500; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="hero">
+    <div class="hero-eyebrow">◆ No-code AutoML Platform</div>
+    <h1 class="hero-title">Train ML models on<br><em>any CSV dataset</em></h1>
+    <p class="hero-sub">Upload your data, pick a target column, and instantly train multiple models with automatic preprocessing and evaluation.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div> Upload CSV</div>
+      <div class="step"><div class="step-num">2</div> Select target</div>
+      <div class="step"><div class="step-num">3</div> Choose models</div>
+      <div class="step"><div class="step-num">4</div> Get results</div>
+    </div>
+  </div>
+
+  <div class="form-container">
+    <form id="train-form" action="/train" method="post" enctype="multipart/form-data">
+      <!-- Upload Card -->
+      <div class="card" style="margin-bottom:1.5rem">
+        <div class="card-header"><div class="card-title">Step 1 — Upload dataset</div></div>
+        <div class="card-body">
+          <div class="upload-zone" id="drop-zone">
+            <input type="file" name="file" id="file-input" accept=".csv" required>
+            <div class="upload-icon">📁</div>
+            <div class="upload-label" id="upload-label">Drop your CSV here</div>
+            <div class="upload-hint">or click to browse · CSV files up to 50 MB</div>
+          </div>
+          <div id="file-info" style="display:none; margin-top:12px">
+            <div class="info-row" id="info-row"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Target Column Card -->
+      <div class="card" id="col-card" style="display:none;margin-bottom:1.5rem">
+        <div class="card-header"><div class="card-title">Step 2 — Select target column</div></div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--muted);margin-bottom:8px;font-weight:500">Click the column you want to predict:</p>
+          <div class="col-list" id="col-list"></div>
+          <div id="col-select-hint">No column selected</div>
+          <input type="hidden" name="target_col" id="target-hidden">
+        </div>
+      </div>
+
+      <!-- Models Card -->
+      <div class="card" id="model-card" style="display:none;margin-bottom:1.5rem">
+        <div class="card-header"><div class="card-title">Step 3 — Select models</div></div>
+        <div class="card-body">
+          <div class="btn-group">
+            <div>Choose the models to train:</div>
+            <button type="button" class="btn btn-outline btn-sm" id="model-toggle" style="padding:6px 14px;font-size:12px">Select All</button>
+          </div>
+          <div class="model-grid" id="model-grid"></div>
+          <div id="model-warning">⚠ Training with more than 5 models may take longer</div>
+          <input type="hidden" name="models" id="models-hidden">
+        </div>
+      </div>
+
+      <!-- Preview Card -->
+      <div id="preview-card" class="card" style="display:none;margin-bottom:1.5rem">
+        <div class="card-header"><div class="card-title">Preview — first 3 rows</div></div>
+        <div class="card-body" style="overflow-x:auto">
+          <table class="preview-table" id="preview-table"></table>
+        </div>
+      </div>
+
+      <!-- Train Button -->
+      <button type="submit" class="btn btn-primary" id="train-btn" style="display:none;width:100%;justify-content:center;font-size:15px;padding:14px;font-weight:600">
+        ⚡ Train Models
+      </button>
+    </form>
+  </div>
+</div>
+
+<script>
+const fileInput = document.getElementById('file-input');
+const dropZone = document.getElementById('drop-zone');
+const uploadLabel = document.getElementById('upload-label');
+const colCard = document.getElementById('col-card');
+const modelToggle = document.getElementById('model-toggle');
+const modelWarning = document.getElementById('model-warning');
+const modelsHidden = document.getElementById('models-hidden');
+const previewCard = document.getElementById('preview-card');
+const colList = document.getElementById('col-list');
+const trainBtn = document.getElementById('train-btn');
+const targetHidden = document.getElementById('target-hidden');
+const colHint = document.getElementById('col-select-hint');
+const fileInfo = document.getElementById('file-info');
+const infoRow = document.getElementById('info-row');
+let selectedCol = null;
+let currentFile = null;
+let modelMetadata = {};
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) handleFile(fileInput.files[0]);
+});
+['dragover','dragleave','drop'].forEach(ev => {
+  dropZone.addEventListener(ev, e => {
+    e.preventDefault();
+    if (ev === 'dragover') dropZone.classList.add('drag-over');
+    else dropZone.classList.remove('drag-over');
+    if (ev === 'drop' && e.dataTransfer.files.length) {
+      fileInput.files = e.dataTransfer.files;
+      handleFile(e.dataTransfer.files[0]);
+    }
+  });
+});
+
+dropZone.addEventListener('click', () => {
+  fileInput.click();
+});
+
+dropZone.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    fileInput.click();
+  }
+});
+
+dropZone.tabIndex = 0;
+
+async function handleFile(file) {
+  uploadLabel.textContent = file.name;
+  currentFile = file;
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api/columns', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+
+  infoRow.innerHTML = `<span><b>${data.columns.length}</b> columns</span><span><b>${file.size > 1e6 ? (file.size/1e6).toFixed(1)+'MB' : Math.round(file.size/1024)+'KB'}</b></span>`;
+  fileInfo.style.display = 'block';
+  colCard.style.display = 'block';
+
+  colList.innerHTML = '';
+  selectedCol = null;
+  targetHidden.value = '';
+  trainBtn.style.display = 'none';
+  colHint.textContent = 'No column selected';
+
+  const previewTable = document.getElementById('preview-table');
+  previewTable.innerHTML = '';
+
+  data.columns.forEach(col => {
+    const chip = document.createElement('div');
+    chip.className = 'col-chip';
+    chip.textContent = col;
+    chip.onclick = () => {
+      document.querySelectorAll('.col-chip').forEach(c => c.classList.remove('selected'));
+      chip.classList.add('selected');
+      selectedCol = col;
+      targetHidden.value = col;
+      colHint.textContent = `✓ Predicting: "${col}"`;
+      trainBtn.style.display = 'inline-flex';
+      updateModelsByTarget(col);
+    };
+    colList.appendChild(chip);
+  });
+
+  if (Array.isArray(data.preview) && data.preview.length) {
+    const headerRow = document.createElement('tr');
+    Object.keys(data.preview[0]).forEach(col => {
+      const th = document.createElement('th');
+      th.textContent = col;
+      headerRow.appendChild(th);
+    });
+    previewTable.appendChild(headerRow);
+
+    data.preview.forEach(row => {
+      const tr = document.createElement('tr');
+      Object.values(row).forEach(val => {
+        const td = document.createElement('td');
+        td.textContent = val;
+        tr.appendChild(td);
+      });
+      previewTable.appendChild(tr);
+    });
+    previewCard.style.display = 'block';
+  }
+}
+
+async function updateModelsByTarget(targetCol) {
+  if (!currentFile) return;
+  
+  try {
+    const fd = new FormData();
+    fd.append('file', currentFile);
+    fd.append('target_col', targetCol);
+    
+    const res = await fetch('/api/models', { method: 'POST', body: fd });
+    const data = await res.json();
+    
+    if (data.error) {
+      console.error('Error fetching models:', data.error);
+      return;
+    }
+    
+    modelMetadata = data.models;
+    const problemType = data.problem_type;
+    
+    // Show model card now that we have a target column selected
+    document.getElementById('model-card').style.display = 'block';
+    
+    // Rebuild model grid with filtered models
+    const modelGrid = document.getElementById('model-grid');
+    modelGrid.innerHTML = '';
+    
+    // Define a consistent order for models (classification first, then both, then regression)
+    const modelOrder = [
+      'logistic_regression', 'sgd_classifier', 'naive_bayes', 'lda', 'qda',
+      'decision_tree', 'random_forest', 'extra_trees', 'gradient_boosting', 
+      'adaboost', 'bagging', 'knn', 'svm', 'gaussian_process', 'xgboost',
+      'ridge', 'lasso'
+    ];
+    
+    const sortedKeys = modelOrder.filter(key => key in modelMetadata);
+    
+    sortedKeys.forEach(key => {
+      if (!(key in modelMetadata)) return;
+      
+      const model = modelMetadata[key];
+      const label = document.createElement('label');
+      label.className = 'col-chip';
+      label.style.display = 'flex';
+      label.style.alignItems = 'center';
+      label.style.gap = '8px';
+      label.style.padding = '8px 12px';
+      
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.name = 'model-option';
+      checkbox.value = key;
+      checkbox.style.margin = '0';
+      checkbox.style.cursor = 'pointer';
+      
+      // Auto-check commonly used models for the problem type
+      if ((problemType === 'regression' && ['random_forest', 'xgboost'].includes(key)) ||
+          ((problemType === 'binary' || problemType === 'multiclass') && ['logistic_regression', 'random_forest', 'xgboost'].includes(key))) {
+        checkbox.checked = true;
+      }
+      
+      checkbox.addEventListener('change', syncModelsField);
+      
+      const span = document.createElement('span');
+      span.textContent = model.label;
+      span.style.fontSize = '13px';
+      span.style.flex = '1';
+      
+      label.appendChild(checkbox);
+      label.appendChild(span);
+      modelGrid.appendChild(label);
+    });
+    
+    syncModelsField();
+  } catch (error) {
+    console.error('Error updating models:', error);
+  }
+}
+
+function getSelectedModelKeys() {
+  return Array.from(document.querySelectorAll('input[name="model-option"]:checked')).map(cb => cb.value);
+}
+
+function syncModelsField() {
+  const selected = getSelectedModelKeys();
+  modelsHidden.value = selected.join(',');
+  modelWarning.style.display = selected.length > 5 ? 'block' : 'none';
+  const allCheckboxes = document.querySelectorAll('input[name="model-option"]');
+  if (allCheckboxes.length > 0) {
+    modelToggle.textContent = selected.length === allCheckboxes.length ? 'Deselect All' : 'Select All';
+  }
+}
+
+function setModelsChecked(checked) {
+  document.querySelectorAll('input[name="model-option"]').forEach(cb => { cb.checked = checked; });
+  syncModelsField();
+}
+
+modelToggle.addEventListener('click', () => {
+  const checkboxes = Array.from(document.querySelectorAll('input[name="model-option"]'));
+  const allSelected = checkboxes.length && checkboxes.every(cb => cb.checked);
+  setModelsChecked(!allSelected);
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target.name === 'model-option') {
+    syncModelsField();
+  }
+});
+
+syncModelsField();
+
+document.getElementById('train-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  
+  trainBtn.innerHTML = '<div class="spinner"></div> &nbsp;Preparing training...';
+  trainBtn.disabled = true;
+  
+  const formData = new FormData(this);
+  const models = formData.get('models');
+  
+  // Create a hidden form and submit it to /train
+  const hiddenForm = document.createElement('form');
+  hiddenForm.method = 'POST';
+  hiddenForm.action = '/train';
+  hiddenForm.enctype = 'multipart/form-data';
+  
+  for (let [key, value] of formData.entries()) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = key;
+    input.value = value;
+    hiddenForm.appendChild(input);
+  }
+  
+  document.body.appendChild(hiddenForm);
+  hiddenForm.submit();
+});
+</script>
+{% endblock %}

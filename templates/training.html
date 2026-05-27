@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Training in Progress — AutoML Studio{% endblock %}
+
+{% block extra_head %}
+<style>
+.training-container { max-width: 800px; margin: 2rem auto; }
+.training-header { text-align: center; margin-bottom: 2rem; }
+.training-title { font-size: 1.8rem; font-weight: 800; margin-bottom: 0.5rem; }
+.training-subtitle { font-size: 13px; color: var(--muted); margin-bottom: 1rem; }
+.progress-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
+.model-progress { margin-bottom: 2rem; }
+.model-header { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+.model-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent2); border-radius: 50%; animation: spin 0.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.model-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.status-done { color: var(--green); }
+.status-done::before { content: '✓'; margin-right: 4px; }
+.progress-bar { background: var(--surface2); border-radius: 4px; height: 24px; overflow: hidden; border: 1px solid var(--border); }
+.progress-fill { background: linear-gradient(90deg, var(--accent2), var(--accent)); height: 100%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: white; white-space: nowrap; transition: width 0.3s ease; }
+.log-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; font-family: var(--mono); font-size: 12px; color: var(--text); max-height: 400px; overflow-y: auto; line-height: 1.6; margin-top: 1rem; }
+.log-line { display: flex; gap: 0.75rem; margin-bottom: 0.5rem; }
+.log-time { color: var(--muted); flex-shrink: 0; }
+.log-msg { flex: 1; }
+.completed-msg { color: var(--green); }
+.error-msg { color: #ef4444; }
+.info-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+.stat-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem 1rem; text-align: center; }
+.stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
+.stat-value { font-size: 18px; font-weight: 700; color: var(--accent2); margin-top: 0.5rem; font-family: var(--mono); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="training-container">
+  <div class="training-header">
+    <div class="training-title">🚀 Training in Progress</div>
+    <div class="training-subtitle">Your models are being trained. This may take a few minutes...</div>
+  </div>
+
+  <div class="progress-card">
+    <div id="progressContainer"></div>
+    <div id="statsContainer" class="info-stats" style="display:none">
+      <div class="stat-box">
+        <div class="stat-label">Models Trained</div>
+        <div class="stat-value" id="statModels">0/0</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Elapsed Time</div>
+        <div class="stat-value" id="statTime">--:--</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Status</div>
+        <div class="stat-value" id="statStatus">Training</div>
+      </div>
+    </div>
+
+    <div class="log-box" id="logBox">
+      <div class="log-line">
+        <span class="log-time">[00:00]</span>
+        <span class="log-msg">Initializing training pipeline...</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const sessionId = '{{ session_id }}';
+let startTime = Date.now();
+let updateInterval;
+
+function formatTime(ms) {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function addLog(message, type = 'normal') {
+  const logBox = document.getElementById('logBox');
+  const elapsed = formatTime(Date.now() - startTime);
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `
+    <span class="log-time">[${elapsed}]</span>
+    <span class="log-msg ${type === 'done' ? 'completed-msg' : type === 'error' ? 'error-msg' : ''}">${message}</span>
+  `;
+  logBox.appendChild(line);
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+function createModelProgress(modelName, index, total) {
+  const container = document.getElementById('progressContainer');
+  const modelDiv = document.createElement('div');
+  modelDiv.id = `model-${index}`;
+  modelDiv.className = 'model-progress';
+  modelDiv.innerHTML = `
+    <div class="model-header">
+      <div class="model-spinner" id="spinner-${index}"></div>
+      <span>${modelName}</span>
+      <span class="model-status" id="status-${index}">Training...</span>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress-${index}" style="width: 0%"></div>
+    </div>
+  `;
+  container.appendChild(modelDiv);
+  
+  document.getElementById('statModels').textContent = `0/${total}`;
+}
+
+function updateModelProgress(index, percent) {
+  const bar = document.getElementById(`progress-${index}`);
+  if (bar) {
+    bar.style.width = percent + '%';
+    bar.textContent = percent > 10 ? percent + '%' : '';
+  }
+}
+
+function markModelDone(index, modelName) {
+  const spinner = document.getElementById(`spinner-${index}`);
+  const status = document.getElementById(`status-${index}`);
+  if (spinner) spinner.style.display = 'none';
+  if (status) {
+    status.className = 'model-status status-done';
+    status.textContent = 'Done';
+  }
+  
+  const trained = document.querySelectorAll('.status-done').length;
+  const total = document.querySelectorAll('.model-spinner').length;
+  document.getElementById('statModels').textContent = `${trained}/${total}`;
+  
+  addLog(`✓ ${modelName} training completed`, 'done');
+}
+
+function pollProgress() {
+  fetch(`/api/training-status/${sessionId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.session_id) return;
+      
+      // Initialize progress containers on first update
+      if (document.getElementById('progressContainer').children.length === 0) {
+        const models = data.models || [];
+        models.forEach((model, i) => {
+          createModelProgress(model, i, models.length);
+        });
+      }
+      
+      // Update model progress
+      data.progress?.forEach((prog, i) => {
+        updateModelProgress(i, prog.percent || 0);
+        if (prog.status === 'completed') {
+          markModelDone(i, data.models?.[i] || `Model ${i + 1}`);
+        }
+      });
+      
+      // Update logs
+      data.logs?.forEach(log => {
+        if (!document.querySelector(`[data-log-id="${log.id}"]`)) {
+          const line = document.createElement('div');
+          line.className = 'log-line';
+          line.setAttribute('data-log-id', log.id);
+          const elapsed = formatTime(Date.now() - startTime);
+          line.innerHTML = `
+            <span class="log-time">[${elapsed}]</span>
+            <span class="log-msg">${log.message}</span>
+          `;
+          document.getElementById('logBox').appendChild(line);
+          document.getElementById('logBox').scrollTop = document.getElementById('logBox').scrollHeight;
+        }
+      });
+      
+      // Update time
+      document.getElementById('statTime').textContent = formatTime(Date.now() - startTime);
+      
+      // Redirect when complete
+      if (data.status === 'completed') {
+        clearInterval(updateInterval);
+        document.getElementById('statStatus').textContent = 'Complete';
+        document.getElementById('statStatus').style.color = 'var(--green)';
+        addLog('✓ All models trained successfully!', 'done');
+        setTimeout(() => {
+          window.location.href = `/results/${sessionId}`;
+        }, 2000);
+      }
+    })
+    .catch(err => {
+      console.error('Error polling progress:', err);
+      addLog('Error: Could not fetch training status', 'error');
+    });
+}
+
+// Show stats container
+document.getElementById('statsContainer').style.display = 'grid';
+
+// Start polling
+updateInterval = setInterval(pollProgress, 500);
+pollProgress();
+
+// Initial logs
+addLog('Starting model training...');
+</script>
+{% endblock %}

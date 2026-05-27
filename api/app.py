@@ -10,7 +10,8 @@ from werkzeug.utils import secure_filename
 import  sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.pipeline.engine import(
-    train_session, predict_single, predict_batch, load_session
+    training_sessions, predict_single, predict_batch, load_session,
+    MODEL_REGISTRY, detect_problem_type, get_filtered_models
 )
 
 app = Flask(__name__,
@@ -18,8 +19,11 @@ app = Flask(__name__,
             static_folder=os.path.join(os.path.dirname(__file__),'..','static')
 )
 
-app.secret_key=os.environ.get('SECRET_KEY', '')
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-change-in-prod')
 CORS(app)
+
+# Training progress tracking
+training_progress = {}
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -58,12 +62,16 @@ def train():
         return error_response('CSV must have at least 2 columns and 1 row')
     
     target_col = request.form.get('target_col', '').strip()
+    models_data = request.form.get('models', '')
+    selected_keys = [m.strip() for m in models_data.split(',') if m.strip()]
     if not target_col:
         return error_response('Please select a target column.')
     if target_col not in df.columns:
         return error_response(f"Column '{target_col}' not found in CSV.")
+    if not selected_keys:
+        selected_keys = ['logistic_regression', 'random_forest', 'xgboost']
     try:
-        result = train_session(df, target_col)
+        result = training_sessions(df, target_col, selected_keys=selected_keys)
     except ValueError as e:
         return error_response(str(e))
     except Exception:
@@ -72,33 +80,59 @@ def train():
     session['current_session_id'] = result['session_id']
     return render_template('results.html', result=result)
 
+@app.route('/training-progress/<session_id>')
+def training_progress_page(session_id):
+    selected_keys = request.args.get('models', 'logistic_regression,random_forest,xgboost').split(',')
+    selected_keys = [k.strip() for k in selected_keys if k.strip()]
+    
+    # Initialize progress tracking
+    training_progress[session_id] = {
+        'status': 'training',
+        'models': [MODEL_REGISTRY[k]['label'] for k in selected_keys if k in MODEL_REGISTRY],
+        'progress': [{'percent': 0, 'status': 'training'} for _ in selected_keys],
+        'logs': [{'id': 0, 'message': 'Initializing training pipeline...'}]
+    }
+    
+    return render_template('training.html', session_id=session_id)
+
+@app.route('/api/training-status/<session_id>')
+def get_training_status(session_id):
+    data = training_progress.get(session_id, {
+        'status': 'unknown',
+        'models': [],
+        'progress': [],
+        'logs': []
+    })
+    return jsonify(data)
+
+@app.route('/results/<session_id>')
+def results_page(session_id):
+    try:
+        _, _, meta = load_session(session_id)
+        result = training_progress.get(session_id, {}).copy()
+        result.pop('progress', None)
+        result.pop('logs', None)
+        
+        # Load full results from session
+        import glob
+        session_dir = os.path.join(os.path.dirname(__file__), '..', 'sessions', session_id)
+        if os.path.exists(session_dir):
+            with open(os.path.join(session_dir, 'results.json'), 'r') as f:
+                result = json.load(f)
+        
+        return render_template('results.html', result=result)
+    except Exception as e:
+        print(f"Error loading results: {e}")
+        return f"<h2>Error loading results: {e}</h2><br><a href='/'>Go back</a>", 500
+
 @app.route('/predict-form/<session_id>')
 def predict_form(session_id):
     try:
         _, _, meta = load_session(session_id)
-    except FileNotFoundError:
-        flash('Session not found.', 'error')
-        return redirect(url_for('index'))
-    
-    input_data = {}
-    for col in meta['feature_cols']:
-        val = request.form.get(col, '').strip()
-        if col in meta['numeric_cols']:
-            try:
-                input_data[col] = float(val) if val != '' else None
-            except ValueError:
-                input_data[col] = None
-        else:
-            input_data[col] = val if val != '' else None
-
-        
-        try:
-            result = predict_single(session_id, input_data)
-        except Exception as e:
-            flash(f'Prediction failed: {str(e)}', 'error')
-            return redirect(url_for('predict_form', session_id=session_id))
-        
-        return render_template('predict.html', meta=meta, session_id=session_id, prediction=result, input_data=input_data)
+    except Exception as e:
+        print(f"Session load error: {e}")
+        return f"<h2>Error loading session: {e}</h2><br><a href='/'>Go back</a>", 500
+    return render_template('predict.html', meta=meta, session_id=session_id)
     
 @app.route('/predict-batch/<session_id>', methods=['POST'])
 def predict_batch_ui(session_id):
@@ -114,7 +148,7 @@ def predict_batch_ui(session_id):
     file = request.files['file']
     if not allowed_file(file.filename):
         flash('Only CSV files are supported.','error')
-        return redirect(url_for('predict_form' session_id=session_id))
+        return redirect(url_for('predict_form',session_id=session_id))
     
     try:
         content = file.read().decode('utf-8', errors='replace')
@@ -150,17 +184,58 @@ def api_train():
         return jsonify({'error': 'No file uploaded'}), 400
     file = request.files['file']
     target_col = request.form.get('target_col', '')
+    models_data = request.form.get('models', '')
     if not target_col:
         return jsonify({'error': 'target_col required'}), 400
+    selected_keys = [m.strip() for m in models_data.split(',') if m.strip()]
+    if not selected_keys:
+        selected_keys = ['logistic_regression', 'random_forest', 'xgboost']
     try:
         content = file.read().decode('utf-8', errors='replace')
         df = pd.read_csv(io.StringIO(content))
-        result = train_session(df, target_col)
+        result = training_sessions(df, target_col, selected_keys=selected_keys)
         result.pop('eda_plots', None)
         result.pop('importance_plot',None)
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}),500
+
+@app.route('/api/models', methods=['POST'])
+def api_models():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    file = request.files['file']
+    target_col = request.form.get('target_col', '').strip()
+    if not target_col:
+        return jsonify({'error': 'target_col required'}), 400
+    try:
+        content = file.read().decode('utf-8', errors='replace')
+        df = pd.read_csv(io.StringIO(content))
+        if target_col not in df.columns:
+            return jsonify({'error': 'Column not found'}), 400
+        problem_type = detect_problem_type(df[target_col])
+        filtered_models = get_filtered_models(problem_type)
+        return jsonify({'problem_type': problem_type, 'models': filtered_models})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/problem_type', methods=['POST'])
+def api_problem_type():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    file = request.files['file']
+    target_col = request.form.get('target_col', '').strip()
+    if not target_col:
+        return jsonify({'error': 'target_col required'}), 400
+    try:
+        content = file.read().decode('utf-8', errors='replace')
+        df = pd.read_csv(io.StringIO(content))
+        if target_col not in df.columns:
+            return jsonify({'error': 'Column not found'}), 400
+        problem_type = detect_problem_type(df[target_col])
+        return jsonify({'problem_type': problem_type})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 @app.route('/api/predict/<session_id>', methods=['POST'])
 def api_predict(session_id):

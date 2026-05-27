@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}Training Results — AutoML Studio{% endblock %}
+
+{% block extra_head %}
+<style>
+.results-hero { padding: 2.5rem 0 2rem; border-bottom: 1px solid var(--border); margin-bottom: 2rem; }
+.results-title { font-size: 1.8rem; font-weight: 800; margin-bottom: 0.5rem; }
+.meta-row { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 12px; font-family: var(--mono); color: var(--muted); }
+.meta-row span b { color: var(--text); }
+.models-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+.model-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; transition: border-color .2s; }
+.model-card.best { border: 2px solid var(--green); }
+.model-card-head { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+.model-name { font-size: 13px; font-weight: 600; }
+.model-metrics { padding: 1rem; display: flex; flex-direction: column; gap: 8px; }
+.metric-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.metric-key { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+.metric-val { font-weight: 600; font-family: var(--mono); color: var(--text); }
+.metric-bar-wrap { height: 3px; background: var(--border); border-radius: 2px; margin-top: 4px; }
+.metric-bar { height: 3px; border-radius: 2px; background: var(--accent); }
+.param-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: rgba(108,99,255,0.12); border: 1px solid rgba(108,99,255,0.25); font-size: 11px; font-family: var(--mono); color: var(--accent2); }
+.plots-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+.plots-grid .card { cursor: pointer; transition: border-color .2s, box-shadow .2s; }
+.plots-grid .card:hover { border-color: var(--accent2); box-shadow: 0 4px 12px rgba(108,99,255,0.15); }
+.plots-grid .card img { width: 100%; height: auto; object-fit: contain; min-height: 350px; border-radius: 0 0 8px 8px; display: block; }
+.action-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2.5rem; }
+.session-block { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem 1rem; font-family: var(--mono); font-size: 12px; color: var(--accent2); display: flex; align-items: center; gap: 10px; }
+.session-label { font-size: 10px; color: var(--muted); display: block; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 2px; }
+
+/* Modal Styles */
+.modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); }
+.modal.show { display: flex; align-items: center; justify-content: center; }
+.modal-content { background-color: var(--background); border-radius: 8px; padding: 2rem; max-width: 90vw; max-height: 90vh; overflow-y: auto; position: relative; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
+.modal-close { position: absolute; top: 1rem; right: 1rem; font-size: 28px; font-weight: bold; color: var(--muted); cursor: pointer; transition: color .2s; }
+.modal-close:hover { color: var(--text); }
+.modal-img { width: 100%; height: auto; max-width: 100%; border-radius: 4px; }
+.modal-title { font-size: 16px; font-weight: 600; margin-bottom: 1rem; color: var(--text); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="results-hero">
+    <div class="results-title">
+      <span style="color:var(--green)">✓</span> Training complete
+    </div>
+    <div class="meta-row">
+      <span>Session <b>{{ result.session_id }}</b></span>
+      <span>Problem: <b>{{ result.problem_type }}</b></span>
+      <span>Rows: <b>{{ result.meta.row_count }}</b></span>
+      <span>Features: <b>{{ result.meta.col_count - 1 }}</b></span>
+      <span>Best model: <b>{{ result.best_model }}</b></span>
+    </div>
+  </div>
+
+  <!-- Model comparison -->
+  <h2 style="font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:1rem">Model comparison</h2>
+  <div class="models-grid">
+    {% for model_name, model_data in result.results.items() %}
+    {% set metrics = model_data.metrics if model_data.metrics is defined else model_data %}
+    <div class="model-card {% if model_name == result.best_model %}best{% endif %}">
+      <div class="model-card-head">
+        {% if model_name == result.best_model %}
+          <div class="badge badge-green" style="font-size:10px">BEST</div>
+        {% else %}
+          <div class="dot" style="width:8px;height:8px;background:var(--border2);border-radius:50%"></div>
+        {% endif %}
+        <span class="model-name">{{ model_name }}</span>
+      </div>
+      <div class="model-metrics">
+        {% for key, val in metrics.items() %}
+        <div>
+          <div class="metric-row">
+            <span class="metric-key">{{ key }}</span>
+            <span class="metric-val">{{ val }}</span>
+          </div>
+          <div class="metric-bar-wrap">
+            <div class="metric-bar" style="width:{{ [val * 100, 100]|min if val <= 1 else [val, 100]|min }}%"></div>
+          </div>
+        </div>
+        {% endfor %}
+        {% if model_data.cv_score is not none %}
+        <div>
+          <div class="metric-row">
+            <span class="metric-key">CV Score</span>
+            <span class="metric-val">{{ (model_data.cv_score * 100) | round(2) }}%</span>
+          </div>
+          <div class="metric-bar-wrap">
+            <div class="metric-bar" style="width:{{ [model_data.cv_score * 100, 100]|min }}%"></div>
+          </div>
+        </div>
+        {% endif %}
+        {% if model_data.best_params %}
+        <div style="margin-top:0.75rem">
+          <div class="metric-row">
+            <span class="metric-key">Best params</span>
+            <span class="metric-val"></span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:0.5rem">
+            {% for key, val in model_data.best_params.items() %}
+            <span class="param-chip">{{ key.replace('model__', '') }}={{ val if val is string else val | join(', ') }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- EDA plots -->
+  {% if result.eda_plots %}
+  <h2 style="font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:1rem">Exploratory data analysis</h2>
+  <div class="plots-grid">
+    {% if result.eda_plots.target %}
+    <div class="card" onclick="openModal('{{ result.eda_plots.target }}', 'Target distribution')">
+      <div class="card-header"><div class="card-title">Target distribution</div></div>
+      <img src="data:image/png;base64,{{ result.eda_plots.target }}" alt="Target distribution" style="cursor: pointer;">
+    </div>
+    {% endif %}
+    {% if result.eda_plots.missing %}
+    <div class="card" onclick="openModal('{{ result.eda_plots.missing }}', 'Missing values')">
+      <div class="card-header"><div class="card-title">Missing values</div></div>
+      <img src="data:image/png;base64,{{ result.eda_plots.missing }}" alt="Missing values" style="cursor: pointer;">
+    </div>
+    {% endif %}
+    {% if result.eda_plots.correlation %}
+    <div class="card" onclick="openModal('{{ result.eda_plots.correlation }}', 'Correlation matrix')">
+      <div class="card-header"><div class="card-title">Correlation matrix</div></div>
+      <img src="data:image/png;base64,{{ result.eda_plots.correlation }}" alt="Correlation matrix" style="cursor: pointer;">
+    </div>
+    {% endif %}
+    {% if result.importance_plot %}
+    <div class="card" onclick="openModal('{{ result.importance_plot }}', 'Feature importance')">
+      <div class="card-header"><div class="card-title">Feature importance</div></div>
+      <img src="data:image/png;base64,{{ result.importance_plot }}" alt="Feature importance" style="cursor: pointer;">
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Modal for enlarged plots -->
+  <div id="plotModal" class="modal">
+    <div class="modal-content">
+      <span class="modal-close" onclick="closeModal()">&times;</span>
+      <div class="modal-title" id="modalTitle"></div>
+      <img id="modalImage" class="modal-img" src="" alt="">
+    </div>
+  </div>
+
+  <!-- Session ID + actions -->
+  <h2 style="font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:1rem">Use this model</h2>
+  <div class="session-block" style="margin-bottom:1.5rem">
+    <div>
+      <span class="session-label">Session ID</span>
+      <span id="sid">{{ result.session_id }}</span>
+    </div>
+    <button onclick="navigator.clipboard.writeText('{{ result.session_id }}')" class="btn btn-outline btn-sm">Copy</button>
+  </div>
+
+  <div class="action-row">
+    <a href="/predict-form/{{ result.session_id }}" class="btn btn-primary">→ Make predictions</a>
+    <a href="/" class="btn btn-outline">↺ Train another model</a>
+  </div>
+
+  <!-- API cheatsheet -->
+  <div class="card">
+    <div class="card-header"><div class="card-title">API — quick reference</div></div>
+    <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+      <div>
+        <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px">Single prediction</div>
+        <div class="code-block">POST /api/predict/{{ result.session_id }}
+Content-Type: application/json
+
+{
+{% for col in result.meta.numeric_cols[:3] %}  "{{ col }}": 0,
+{% endfor %}{% for col in result.meta.cat_cols[:2] %}  "{{ col }}": "value"{% if not loop.last %},{% endif %}
+{% endfor %}}
+</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px">Batch CSV upload</div>
+        <div class="code-block">POST /api/predict/{{ result.session_id }}/batch
+
+# multipart/form-data
+# field: file = your_data.csv
+
+# Returns:
+{
+  "predictions": [...],
+  "count": N
+}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function openModal(imageData, title) {
+  const modal = document.getElementById('plotModal');
+  const img = document.getElementById('modalImage');
+  const titleEl = document.getElementById('modalTitle');
+  
+  img.src = 'data:image/png;base64,' + imageData;
+  titleEl.textContent = title;
+  modal.classList.add('show');
+}
+
+function closeModal() {
+  const modal = document.getElementById('plotModal');
+  modal.classList.remove('show');
+}
+
+// Close modal when clicking outside the content
+document.getElementById('plotModal').addEventListener('click', function(event) {
+  if (event.target === this) {
+    closeModal();
+  }
+});
+
+// Close modal on Escape key
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') {
+    closeModal();
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,13 @@
+flask
+flask-cors
+pandas
+numpy
+scikit-learn
+xgboost
+joblib
+matplotlib
+seaborn
+shap
+gunicorn
+python-dotenv
+werkzeug
